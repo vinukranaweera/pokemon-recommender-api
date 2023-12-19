@@ -13,8 +13,8 @@ Deployed website can be viewed here: https://pokemon-recommender.vercel.app/
 
 ## Full Project
 
-https://github.com/gaoqiangzhou/Pokemon/tree/main
+https://github.com/gaoqiangzhou/Pokemon
 
 ## Frontend
 
-https://github.com/vinukranaweera/pokemon-recommender/tree/main
+https://github.com/vinukranaweera/pokemon-recommender
