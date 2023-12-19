@@ -9,6 +9,8 @@ Needs `pip`, `python`, `virtualenv` installed
    - `pip install -r requirements.txt`
 5. Start: `python app.py`
 
+Deployed website can be viewed here: https://pokemon-recommender.vercel.app/
+
 ## Full Project
 
 https://github.com/gaoqiangzhou/Pokemon/tree/main
