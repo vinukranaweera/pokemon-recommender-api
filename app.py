@@ -151,17 +151,90 @@ def get_pokemon_recommendation(pokemon_name):
             'Speed': result['Speed']
         }
 
-        # Find the weakest and strongest stats of the input Pokemon
-        weakest_stat = min(stats, key=stats.get)
-        strongest_stat = max(stats, key=stats.get)
-        
-        print(weakest_stat)
-        # Filter out types with effectiveness less than 1
-        filtered_types = [type for type, effectiveness in effectiveness.items() if effectiveness >= 1]
+        primary_type = result['Primary Type']
+        secondary_type = result.get('Secondary Type', None)
 
-        # Find the type(s) with the maximum effectiveness
+        # Resistance values for types: 0 = immune, 0.25 = 4x resistant, 0.5 = resistant, 1 = normal, 2 = weak, 4 = 4x weak
+        type_resistances = {
+            "Normal": {"Fighting": 2, "Ghost": 0},
+            "Fire": {"Water": 2, "Rock": 2, "Ground": 2, "Fire": 0.5, "Grass": 0.5, "Ice": 0.5, "Bug": 0.5, "Steel": 0.5, "Fairy": 0.5},
+            "Water": {"Electric": 2, "Grass": 2, "Fire": 0.5, "Water": 0.5, "Ice": 0.5, "Steel": 0.5},
+            "Electric": {"Ground": 0, "Electric": 0.5, "Flying": 0.5, "Steel": 0.5},
+            "Grass": {"Fire": 2, "Ice": 2, "Poison": 2, "Flying": 2, "Bug": 2, "Water": 0.5, "Electric": 0.5, "Grass": 0.5, "Ground": 0.5},
+            "Ice": {"Fire": 2, "Fighting": 2, "Rock": 2, "Steel": 2, "Ice": 0.5},
+            "Fighting": {"Flying": 2, "Psychic": 2, "Fairy": 2, "Bug": 0.5, "Rock": 0.5, "Dark": 0.5},
+            "Poison": {"Ground": 2, "Psychic": 2, "Grass": 0.5, "Fighting": 0.5, "Poison": 0.5, "Bug": 0.5, "Fairy": 0.5},
+            "Ground": {"Water": 2, "Grass": 2, "Ice": 2, "Poison": 0.5, "Rock": 0.5, "Electric": 0},
+            "Flying": {"Electric": 2, "Ice": 2, "Rock": 2, "Grass": 0.5, "Fighting": 0.5, "Bug": 0.5, "Ground": 0},
+            "Psychic": {"Bug": 2, "Ghost": 2, "Dark": 2, "Fighting": 0.5, "Psychic": 0.5},
+            "Bug": {"Fire": 2, "Flying": 2, "Rock": 2, "Grass": 0.5, "Fighting": 0.5, "Ground": 0.5},
+            "Rock": {"Water": 2, "Grass": 2, "Fighting": 2, "Ground": 2, "Steel": 2, "Normal": 0.5, "Fire": 0.5, "Poison": 0.5, "Flying": 0.5},
+            "Ghost": {"Ghost": 2, "Dark": 2, "Poison": 0.5, "Bug": 0.5, "Normal": 0, "Fighting": 0},
+            "Dragon": {"Ice": 2, "Dragon": 2, "Fairy": 2, "Fire": 0.5, "Water": 0.5, "Electric": 0.5, "Grass": 0.5},
+            "Dark": {"Fighting": 2, "Bug": 2, "Fairy": 2, "Ghost": 0.5, "Dark": 0.5, "Psychic": 0},
+            "Steel": {"Fire": 2, "Fighting": 2, "Ground": 2, "Normal": 0.5, "Grass": 0.5, "Ice": 0.5, "Flying": 0.5, "Psychic": 0.5, "Bug": 0.5, "Rock": 0.5, "Dragon": 0.5, "Steel": 0.5, "Fairy": 0.5, "Poison": 0},
+            "Fairy": {"Poison": 2, "Steel": 2, "Fighting": 0.5, "Bug": 0.5, "Dark": 0.5, "Dragon": 0},
+        }
+
+        # Calculate combined resistances
+        combined_resistances = {}
+        for attacking_type in type_resistances.keys():
+            type1_modifier = type_resistances.get(primary_type, {}).get(attacking_type, 1)
+            type2_modifier = type_resistances.get(secondary_type, {}).get(attacking_type, 1) if secondary_type else 1
+            combined_resistances[attacking_type] = type1_modifier * type2_modifier
+
+        # Filter for the most resistant type
+        resistant_types = {k: v for k, v in combined_resistances.items() if v <= 1}
+        if resistant_types:
+            most_resistant_type = min(resistant_types, key=resistant_types.get)
+        else:
+            most_resistant_type = None
+        
+        # Determine if the Pokémon is mainly offensive or defensive
+        offensive_stats = ['Attack', 'Sp_Attack', 'Speed']
+        defensive_stats = ['HP', 'Defense', 'Sp_Defense']
+        
+        total_offensive = sum(stats[stat] for stat in offensive_stats)
+        # print('total offensive stats:', total_offensive)
+        total_defensive = sum(stats[stat] for stat in defensive_stats)
+        # print('total defensive stats:', total_defensive)
+        total = total_defensive + total_offensive
+        # print('total:', total)
+
+        # Choose offensive or defensive approach for recommendation
+        recommendation_type = 'defensive' if total_offensive >= total_defensive else 'offensive'
+        if total > 550:
+            recommendation_type = 'offensive' if total_offensive >= total_defensive else 'defensive'
+
+        # print(recommendation_type)
+
+        # Filter out types with effectiveness less than 1
+        filtered_types = [type for type, value in effectiveness.items() if value >= 1]
+
+        if not filtered_types:
+            return {"error": "No types with effectiveness found for this Pokémon."}
+
+        # Find the type with maximum effectiveness
         max_effectiveness = max(filtered_types, key=effectiveness.get)
 
+       # Query logic based on the total stats
+        if total > 550 and most_resistant_type:
+            query = {
+                "$or": [
+                    {"Primary Type": most_resistant_type},
+                    {"Secondary Type": most_resistant_type}
+                ]
+            }
+            # print('Resistant:', most_resistant_type)
+        else:
+            query = {
+                "$or": [
+                    {"Primary Type": max_effectiveness},
+                    {"Secondary Type": max_effectiveness}
+                ]
+            }
+            # print('Effective:', max_effectiveness)
+        
         # Query for Backup Pokemon
         recommendation_query1 = {
             "$and": [
@@ -172,150 +245,23 @@ def get_pokemon_recommendation(pokemon_name):
             ]
         }
 
-        # Query for Pokemon with the chosen type(s) and stats
-        recommendation_query = {
-            "$and": [
-                {"$or": [
-                    {"Primary Type": max_effectiveness},
-                    {"Secondary Type": max_effectiveness}
-                ]},
-            ]
-        }
-        # List to store conditions
-        # Check if all stats are equal (for Mythicals)
-        if all(value == 100 for value in stats.values()):
-            conditions = [
-                {'Sp_Attack': {'$gte': 100}},
-                {'Sp_Defense': {'$gte': 100}},
-            ]
-        else:
-            conditions = []
+        if recommendation_type == 'offensive':
+            query["$and"] = [{"$or": [
+                {"Attack": {"$gte": 100}},
+                {"Sp_Attack": {"$gte": 100}},
+                {"Speed": {"$gte": 100}}
+            ]}]
+        else:  # Defensive recommendation
+            query["$and"] = [{"$or": [
+                {"HP": {"$gte": 100}},
+                {"Defense": {"$gte": 100}},
+                {"Sp_Defense": {"$gte": 100}}
+            ]}]
 
-            # Maximum number of conditions
-            max_conditions = 3
-
-            # Defensive Conditions
-            if strongest_stat in ['Attack', 'Sp_Attack'] and stats[strongest_stat] >= 150:
-                if stats['Attack'] > stats['Sp_Attack']:
-                    if stats[strongest_stat] >= 150 and stats['Speed'] >= 100 and len(conditions) < max_conditions:
-                        conditions.extend([
-                        {'Defense': {'$gte': 150}},
-                        {'Speed': {'$gte': 100}}
-                    ])
-                else:
-                    if stats[strongest_stat] >= 150 and stats['Speed'] >= 100:
-                        conditions.extend([
-                        {'Sp_Defense': {'$gte': 150}},
-                        {'Speed': {'$gte': 100}}
-                    ])
-            elif strongest_stat in ['Attack', 'Sp_Attack'] and 150 > stats[strongest_stat] >= 100:
-                if stats['Attack'] > stats['Sp_Attack']:
-                    if stats['Speed'] >= 75 and len(conditions) < max_conditions:
-                        conditions.extend([
-                        {'Defense': {'$gte': 100}},
-                        {'Speed': {'$gte': 75}}
-                    ])
-                else:
-                    if stats['Speed'] >= 75:
-                        conditions.extend([
-                        {'Sp_Defense': {'$gte': 100}},
-                        {'Speed': {'$gte': 75}}
-                    ])
-            else:
-                if stats['Attack'] > stats['Sp_Attack']:
-                    if stats['Speed'] >= 50 and len(conditions) < max_conditions:
-                        conditions.extend([
-                        {'Defense': {'$gte': 75}},
-                        {'Speed': {'$gte': 50}}
-                    ])
-                else:
-                    if stats['Speed'] >= 50:
-                        conditions.extend([
-                        {'Sp_Defense': {'$gte': 75}},
-                        {'Speed': {'$gte': 50}}
-                    ])
-            
-            # Offensive Conditions
-            if weakest_stat in ['Sp_Defense', 'Defense'] and stats[weakest_stat] < 150:
-                if stats['Defense'] < stats['Sp_Defense']:
-                    if stats[weakest_stat] >= 100 and len(conditions) < max_conditions:
-                        conditions.append({'Attack': {'$gte': 120}})
-                else:
-                    if stats[weakest_stat] >= 100 and len(conditions) < max_conditions:
-                        conditions.append({'Sp_Attack': {'$gte': 120}}) 
-            elif weakest_stat in ['Sp_Defense', 'Defense'] and stats[weakest_stat] < 100:
-                if stats['Defense'] < stats['Sp_Defense']:
-                    if stats[weakest_stat] > 50 and len(conditions) < max_conditions:
-                        conditions.append({'Attack': {'$gte': 100}})
-                else:
-                    if stats[weakest_stat] > 50 and len(conditions) < max_conditions:
-                        conditions.append({'Sp_Attack': {'$gte': 100}})
-            else:
-                if stats['Defense'] < stats['Sp_Defense']: 
-                    if stats[weakest_stat] < 50 and len(conditions) < max_conditions:
-                        conditions.append({'Attack': {'$gte': 80}})
-                else:
-                    if stats[weakest_stat] < 50 and len(conditions) < max_conditions:
-                        conditions.append({'Sp_Attack': {'$gte': 80}})
-
-            # Miscellaneous Conditions
-            if weakest_stat == 'HP' and stats['HP'] < 150:
-                attack_condition1 = {'$or': [
-                    {'Speed': {'$gte': 100}},
-                    {'HP': {'$gte': 100}}
-                ]}
-                attack_condition2 = {'$or': [
-                    {'Speed': {'$gte': 80}},
-                    {'HP': {'$gte': 80}}
-                ]}
-                attack_condition3 = {'$or': [
-                    {'Speed': {'$gte': 60}},
-                    {'HP': {'$gte': 60}}
-                ]}
-                if stats['HP'] >= 100 and len(conditions) < max_conditions:
-                    conditions.append(attack_condition1)
-                elif weakest_stat == 'HP' and stats['HP'] < 100:
-                    if 100 > stats['HP'] > 50 and len(conditions) < max_conditions:
-                        conditions.append(attack_condition2)
-                else:
-                    if stats['HP'] < 50 and len(conditions) < max_conditions:
-                        conditions.append(attack_condition3)
-
-            if weakest_stat == 'Speed' and stats['Speed'] < 150:
-                defense_condition1 = {'$or': [
-                    {'HP': {'$gte': 100}},
-                    {'Speed': {'$gte': 100}}
-                ]}
-                defense_condition2 = {'$or': [
-                    {'HP': {'$gte': 80}},
-                    {'Speed': {'$gte': 80}}
-                ]}
-                defense_condition3 = {'$or': [
-                    {'HP': {'$gte': 60}},
-                    {'Speed': {'$gte': 60}}
-                ]}
-                if stats['Speed'] >= 100 and len(conditions) < max_conditions:
-                    conditions.append(defense_condition1)
-                elif weakest_stat == 'Speed' and stats['Speed'] < 100:
-                    if stats['Speed'] > 50 and len(conditions) < max_conditions:
-                        conditions.append(defense_condition2)
-                else:
-                    if stats['Speed'] < 50 and len(conditions) < max_conditions:
-                        conditions.append(defense_condition3)
-        
-        # Print conditions before extending recommendation query
-        #print(f"Conditions before extending: {conditions}")
-        # Extend recommendation query with conditions
-        if conditions:
-            recommendation_query["$and"].extend(conditions)
-
-        matching_pokemon_cursor = pokeCollection.find(recommendation_query)
-
-        # Convert the cursor to a list
+        matching_pokemon_cursor = pokeCollection.find(query)
         matching_pokemon_list = list(matching_pokemon_cursor)
 
         if matching_pokemon_list:
-            # Randomly choose one Pokemon from the list
             random_recommendation = random.choice(matching_pokemon_list)
 
             response = {
@@ -334,7 +280,6 @@ def get_pokemon_recommendation(pokemon_name):
                     'Speed': random_recommendation['Speed']
                 }
             }
-            #print(f"Recommendation query: {recommendation_query}")
             return response
         else:
             # Backup if no recommendation
@@ -342,7 +287,6 @@ def get_pokemon_recommendation(pokemon_name):
 
             # Convert the cursor to a list
             matching_pokemon_list1 = list(matching_pokemon_cursor1)
-            print(matching_pokemon_list1)
 
             if matching_pokemon_list1:
             # Randomly choose one Pokemon from the list
